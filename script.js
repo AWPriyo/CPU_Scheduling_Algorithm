@@ -1,301 +1,234 @@
+const TITLES = {
+  fcfs: 'First Come First Served (FCFS)',
+  sjf: 'Shortest Job First (Non-preemptive)',
+  srtf: 'Shortest Remaining Time First (SRTF)',
+  priority: 'Priority Scheduling (Non-preemptive)',
+  rr: 'Round Robin'
+};
+const COLORS = ['#60a5fa', '#34d399', '#fbbf24', '#f472b6', '#a78bfa', '#22d3ee', '#fb923c', '#a3e635'];
+const THEMES = ['blue', 'pink', 'purple', 'green'];
+const $ = id => document.getElementById(id);
+
 let processes = [];
 let currentAlgo = 'fcfs';
 
-// Add process from input fields
-function addProcess() {
-    let id = document.getElementById('pId').value.trim();
-    let arrival = parseInt(document.getElementById('pArrival').value);
-    let burst = parseInt(document.getElementById('pBurst').value);
-    let priority = parseInt(document.getElementById('pPriority').value) || 1;
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const colorOf = id => COLORS[Math.max(0, processes.findIndex(p => p.id === id)) % COLORS.length];
+const notify = text => { $('msg').textContent = text || ''; };
 
-    if (!id || isNaN(arrival) || isNaN(burst)) {
-        alert("Please enter valid Process ID, Arrival Time, and Burst Time!");
-        return;
+/* ---------- Theme ---------- */
+function setTheme(name) {
+  if (!THEMES.includes(name)) name = 'blue';
+  document.documentElement.dataset.theme = name;
+  document.querySelectorAll('.swatch').forEach(b => {
+    const on = b.dataset.theme === name;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-checked', on);
+  });
+  try { localStorage.setItem('theme', name); } catch (e) { /* storage unavailable */ }
+}
+
+/* ---------- Input handling ---------- */
+function addProcess(e) {
+  e.preventDefault();
+  const id = $('pId').value.trim();
+  const arrival = parseInt($('pArrival').value);
+  const burst = parseInt($('pBurst').value);
+  const priority = parseInt($('pPriority').value) || 1;
+
+  if (!id || isNaN(arrival) || isNaN(burst) || arrival < 0 || burst < 1) {
+    return notify('Enter a valid Process ID, Arrival time (≥ 0) and Burst time (≥ 1).');
+  }
+  if (processes.some(p => p.id === id)) return notify(`Process "${id}" already exists.`);
+
+  processes.push({ id, arrival, burst, priority });
+  notify();
+  e.target.reset();
+  $('pId').focus();
+  renderInput();
+  if (!$('results').hidden) run();
+}
+
+function removeProcess(i) {
+  processes.splice(i, 1);
+  renderInput();
+  processes.length ? run() : ($('results').hidden = true);
+}
+
+function renderInput() {
+  $('inputBody').innerHTML = processes.length
+    ? processes.map((p, i) => `<tr>
+        <td><span class="pid" style="--c:${colorOf(p.id)}">${esc(p.id)}</span></td>
+        <td>${p.arrival}</td><td>${p.burst}</td><td>${p.priority}</td>
+        <td><button class="btn del" onclick="removeProcess(${i})">Delete</button></td>
+      </tr>`).join('')
+    : '<tr><td class="empty" colspan="5">No processes yet — add one above or load a sample.</td></tr>';
+}
+
+/* ---------- Algorithms ---------- */
+const finalize = (p, t) => {
+  p.completion = t;
+  p.turnaround = t - p.arrival;
+  p.waiting = p.turnaround - p.burst;
+};
+
+function addSlice(gantt, id, start, end, idle = false) {
+  const last = gantt[gantt.length - 1];
+  if (last && last.id === id && last.end === start) last.end = end;
+  else gantt.push({ id, start, end, idle });
+}
+
+// FCFS, SJF and Priority differ only in how the next job is picked.
+function nonPreemptive(procs, key) {
+  const pending = procs.map(p => ({ ...p }));
+  const rows = [], gantt = [];
+  let t = 0;
+  while (pending.length) {
+    const ready = pending.filter(p => p.arrival <= t);
+    if (!ready.length) {
+      const next = Math.min(...pending.map(p => p.arrival));
+      addSlice(gantt, 'Idle', t, next, true);
+      t = next;
+      continue;
     }
-
-    processes.push({ id, arrival, burst, priority });
-    renderInputTable();
-
-    // Clear input fields
-    document.getElementById('pId').value = '';
-    document.getElementById('pArrival').value = '';
-    document.getElementById('pBurst').value = '';
-    document.getElementById('pPriority').value = '';
+    ready.sort((a, b) => key(a) - key(b) || a.arrival - b.arrival);
+    const p = ready[0];
+    pending.splice(pending.indexOf(p), 1);
+    p.response = t - p.arrival;
+    addSlice(gantt, p.id, t, t + p.burst);
+    t += p.burst;
+    finalize(p, t);
+    rows.push(p);
+  }
+  return { rows, gantt };
 }
 
-// Render Inputted Process Table
-function renderInputTable() {
-    let tbody = document.getElementById('inputTableBody');
-    tbody.innerHTML = '';
-    processes.forEach((p, index) => {
-        let row = `<tr>
-            <td>${p.id}</td>
-            <td>${p.arrival}</td>
-            <td>${p.burst}</td>
-            <td>${p.priority}</td>
-            <td><button onclick="removeProcess(${index})" style="background: #e74c3c; color: white; border: none; padding: 3px 8px; cursor: pointer;">Delete</button></td>
-        </tr>`;
-        tbody.innerHTML += row;
-    });
+function srtf(procs) {
+  const list = procs.map(p => ({ ...p, remaining: p.burst, response: -1 }));
+  const gantt = [];
+  let t = 0, left = list.length;
+  while (left) {
+    const ready = list.filter(p => p.arrival <= t && p.remaining > 0);
+    if (!ready.length) { addSlice(gantt, 'Idle', t, t + 1, true); t++; continue; }
+    ready.sort((a, b) => a.remaining - b.remaining || a.arrival - b.arrival);
+    const p = ready[0];
+    if (p.response < 0) p.response = t - p.arrival;
+    addSlice(gantt, p.id, t, t + 1);
+    p.remaining--; t++;
+    if (!p.remaining) { finalize(p, t); left--; }
+  }
+  return { rows: list, gantt };
 }
 
-function removeProcess(index) {
-    processes.splice(index, 1);
-    renderInputTable();
-}
+function roundRobin(procs, q) {
+  const list = procs.map(p => ({ ...p, remaining: p.burst, response: -1 }))
+                    .sort((a, b) => a.arrival - b.arrival);
+  const queue = [], gantt = [];
+  let t = 0, i = 0, left = list.length;
+  const admit = () => { while (i < list.length && list[i].arrival <= t) queue.push(list[i++]); };
 
-function switchTab(algo, event) {
-    currentAlgo = algo;
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-    if(event) event.target.classList.add('active');
-    runScheduling();
-}
-
-function runScheduling() {
-    if (processes.length === 0) {
-        alert("Please add at least one process first!");
-        return;
+  while (left) {
+    admit();
+    if (!queue.length) {
+      const next = list[i].arrival;
+      addSlice(gantt, 'Idle', t, next, true);
+      t = next;
+      continue;
     }
-
-    let results;
-    let title = "";
-
-    switch(currentAlgo) {
-        case 'fcfs':
-            title = "First Come First Served (FCFS) Results";
-            results = calculateFCFS(processes);
-            break;
-        case 'sjf':
-            title = "Shortest Job First (non-preemptive) Results";
-            results = calculateSJF(processes);
-            break;
-        case 'srtf':
-            title = "Shortest Remaining Time First (SRTF) Results";
-            results = calculateSRTF(processes);
-            break;
-        case 'priority':
-            title = "Priority Scheduling (non-preemptive) Results";
-            results = calculatePriority(processes);
-            break;
-        case 'rr':
-            let tq = parseInt(document.getElementById('timeQuantum').value) || 4;
-            title = `Round Robin (q = ${tq}) Results`;
-            results = calculateRoundRobin(processes, tq);
-            break;
-    }
-
-    document.getElementById('algo-title').innerText = title;
-    renderTable(results.processes);
-    renderGanttChart(results.gantt);
-    renderAverages(results.averages);
+    const p = queue.shift();
+    if (p.response < 0) p.response = t - p.arrival;
+    const slice = Math.min(p.remaining, q);
+    addSlice(gantt, p.id, t, t + slice);
+    t += slice; p.remaining -= slice;
+    admit();                                  // newcomers go ahead of the preempted process
+    if (p.remaining) queue.push(p);
+    else { finalize(p, t); left--; }
+  }
+  return { rows: list, gantt };
 }
 
-// 1. FCFS Implementation
-function calculateFCFS(procs) {
-    let sorted = [...procs].sort((a, b) => a.arrival - b.arrival);
-    let currentTime = 0;
-    let gantt = [];
-    let executed = [];
+/* ---------- Run + render ---------- */
+function run() {
+  if (!processes.length) return notify('Add at least one process first.');
+  notify();
 
-    sorted.forEach(p => {
-        let proc = { ...p };
-        if (currentTime < proc.arrival) {
-            currentTime = proc.arrival;
-        }
-        let startTime = currentTime;
-        currentTime += proc.burst;
-        
-        proc.completion = currentTime;
-        proc.turnaround = proc.completion - proc.arrival;
-        proc.waiting = proc.turnaround - proc.burst;
-        proc.response = startTime - proc.arrival;
+  const q = Math.max(1, parseInt($('timeQuantum').value) || 4);
+  const result = {
+    fcfs: () => nonPreemptive(processes, p => p.arrival),
+    sjf: () => nonPreemptive(processes, p => p.burst),
+    priority: () => nonPreemptive(processes, p => p.priority),
+    srtf: () => srtf(processes),
+    rr: () => roundRobin(processes, q)
+  }[currentAlgo]();
 
-        gantt.push({ id: proc.id, start: startTime, end: currentTime });
-        executed.push(proc);
-    });
-
-    return { processes: executed, gantt, averages: calculateAvg(executed) };
+  const rows = result.rows.sort((a, b) => a.arrival - b.arrival);
+  $('algoTitle').textContent = currentAlgo === 'rr' ? `${TITLES.rr} (q = ${q})` : TITLES[currentAlgo];
+  $('results').hidden = false;
+  renderResults(rows);
+  renderGantt(result.gantt);
 }
 
-// 2. SJF (Non-Preemptive) Implementation
-function calculateSJF(procs) {
-    let uncompleted = procs.map(p => ({ ...p }));
-    let currentTime = 0;
-    let completedCount = 0;
-    let n = uncompleted.length;
-    let executed = [];
-    let gantt = [];
+function renderResults(rows) {
+  $('resultBody').innerHTML = rows.map(p => `<tr>
+    <td><span class="pid" style="--c:${colorOf(p.id)}">${esc(p.id)}</span></td>
+    <td>${p.arrival}</td><td>${p.burst}</td><td>${p.completion}</td>
+    <td>${p.turnaround}</td><td>${p.waiting}</td><td>${p.response}</td>
+  </tr>`).join('');
 
-    while (completedCount < n) {
-        let available = uncompleted.filter(p => p.arrival <= currentTime && p.completion === undefined);
-        
-        if (available.length === 0) {
-            currentTime++;
-            continue;
-        }
-
-        available.sort((a, b) => a.burst - b.burst || a.arrival - b.arrival);
-        let p = available[0];
-
-        let startTime = currentTime;
-        currentTime += p.burst;
-        p.completion = currentTime;
-        p.turnaround = p.completion - p.arrival;
-        p.waiting = p.turnaround - p.burst;
-        p.response = startTime - p.arrival;
-
-        gantt.push({ id: p.id, start: startTime, end: currentTime });
-        executed.push(p);
-        completedCount++;
-    }
-
-    executed.sort((a, b) => a.arrival - b.arrival);
-    return { processes: executed, gantt, averages: calculateAvg(executed) };
+  const avg = k => (rows.reduce((s, p) => s + p[k], 0) / rows.length).toFixed(2);
+  $('avgTat').textContent = avg('turnaround');
+  $('avgWt').textContent = avg('waiting');
+  $('avgRt').textContent = avg('response');
 }
 
-// 3. SRTF Fallback/Handler
-function calculateSRTF(procs) {
-    return calculateSJF(procs);
+function renderGantt(gantt) {
+  $('gantt').innerHTML = gantt.map((g, i) => `
+    <div class="seg" style="--d:${g.end - g.start}">
+      <div class="bar ${g.idle ? 'idle' : ''}" style="--c:${g.idle ? 'none' : colorOf(g.id)}">${g.idle ? 'Idle' : esc(g.id)}</div>
+      <span class="tick">${g.start}</span>
+      ${i === gantt.length - 1 ? `<span class="tick end">${g.end}</span>` : ''}
+    </div>`).join('');
 }
 
-// 4. Priority Implementation
-function calculatePriority(procs) {
-    let uncompleted = procs.map(p => ({ ...p }));
-    let currentTime = 0;
-    let completedCount = 0;
-    let n = uncompleted.length;
-    let executed = [];
-    let gantt = [];
+/* ---------- Events ---------- */
+$('procForm').addEventListener('submit', addProcess);
+$('runBtn').addEventListener('click', run);
 
-    while (completedCount < n) {
-        let available = uncompleted.filter(p => p.arrival <= currentTime && p.completion === undefined);
-        
-        if (available.length === 0) {
-            currentTime++;
-            continue;
-        }
+$('tabs').addEventListener('click', e => {
+  const btn = e.target.closest('.tab');
+  if (!btn) return;
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b === btn));
+  currentAlgo = btn.dataset.algo;
+  $('rrConfig').hidden = currentAlgo !== 'rr';
+  if (processes.length) run();
+});
 
-        available.sort((a, b) => a.priority - b.priority || a.arrival - b.arrival);
-        let p = available[0];
+document.querySelector('.themes').addEventListener('click', e => {
+  const btn = e.target.closest('.swatch');
+  if (btn) setTheme(btn.dataset.theme);
+});
 
-        let startTime = currentTime;
-        currentTime += p.burst;
-        p.completion = currentTime;
-        p.turnaround = p.completion - p.arrival;
-        p.waiting = p.turnaround - p.burst;
-        p.response = startTime - p.arrival;
+$('timeQuantum').addEventListener('input', () => { if (currentAlgo === 'rr' && processes.length) run(); });
 
-        gantt.push({ id: p.id, start: startTime, end: currentTime });
-        executed.push(p);
-        completedCount++;
-    }
+$('sampleBtn').addEventListener('click', () => {
+  processes = [
+    { id: 'P1', arrival: 0, burst: 8, priority: 3 },
+    { id: 'P2', arrival: 1, burst: 4, priority: 1 },
+    { id: 'P3', arrival: 2, burst: 9, priority: 4 },
+    { id: 'P4', arrival: 3, burst: 5, priority: 2 }
+  ];
+  renderInput();
+  run();
+});
 
-    executed.sort((a, b) => a.arrival - b.arrival);
-    return { processes: executed, gantt, averages: calculateAvg(executed) };
-}
+$('clearBtn').addEventListener('click', () => {
+  processes = [];
+  notify();
+  renderInput();
+  $('results').hidden = true;
+});
 
-// 5. Round Robin Implementation
-function calculateRoundRobin(procs, tq) {
-    let list = procs.map(p => ({ ...p, remaining: p.burst, response: -1 }));
-    list.sort((a, b) => a.arrival - b.arrival);
-    
-    let currentTime = 0;
-    let queue = [];
-    let gantt = [];
-    let executedMap = {};
-    
-    let idx = 0;
-    while(idx < list.length && list[idx].arrival <= currentTime) {
-        queue.push(list[idx]);
-        idx++;
-    }
-
-    if(queue.length === 0 && list.length > 0) {
-        currentTime = list[0].arrival;
-        queue.push(list[0]);
-        idx = 1;
-    }
-
-    while(queue.length > 0) {
-        let p = queue.shift();
-        
-        if (p.response === -1) {
-            p.response = currentTime - p.arrival;
-        }
-
-        let execTime = Math.min(p.remaining, tq);
-        let startTime = currentTime;
-        currentTime += execTime;
-        p.remaining -= execTime;
-
-        gantt.push({ id: p.id, start: startTime, end: currentTime });
-
-        while(idx < list.length && list[idx].arrival <= currentTime) {
-            if(!queue.includes(list[idx]) && list[idx].remaining > 0) {
-                queue.push(list[idx]);
-            }
-            idx++;
-        }
-
-        if (p.remaining > 0) {
-            queue.push(p);
-        } else {
-            p.completion = currentTime;
-            p.turnaround = p.completion - p.arrival;
-            p.waiting = p.turnaround - p.burst;
-            executedMap[p.id] = p;
-        }
-    }
-
-    let executed = Object.values(executedMap);
-    executed.sort((a, b) => a.arrival - b.arrival);
-    return { processes: executed, gantt, averages: calculateAvg(executed) };
-}
-
-function renderTable(procs) {
-    let tbody = document.getElementById('processTableBody');
-    tbody.innerHTML = '';
-    procs.append = '';
-    procs.forEach(p => {
-        let row = `<tr>
-            <td>${p.id}</td>
-            <td>${p.arrival}</td>
-            <td>${p.burst}</td>
-            <td>${p.completion}</td>
-            <td>${p.turnaround}</td>
-            <td>${p.waiting}</td>
-            <td>${p.response}</td>
-        </tr>`;
-        tbody.innerHTML += row;
-    });
-}
-
-function renderGanttChart(gantt) {
-    let container = document.getElementById('ganttChart');
-    container.innerHTML = '';
-    gantt.forEach(item => {
-        let box = `<div style="background: #3498db; color: white; padding: 10px; min-width: 50px; text-align: center; border-radius: 4px;">
-            <div>${item.id}</div>
-            <small>${item.start} - ${item.end}</small>
-        </div>`;
-        container.innerHTML += box;
-    });
-}
-
-function calculateAvg(procs) {
-    let totalTat = 0, totalWat = 0, totalRes = 0;
-    let n = procs.length;
-    if (n === 0) return { turnaround: 0, waiting: 0, response: 0 };
-
-    procs.forEach(p => {
-        totalTat += p.turnaround;
-        totalWat += p.waiting;
-        totalRes += p.response;
-    });
-
-    return {
-        turnaround: (totalTat / n).toFixed(2),
-        waiting: (totalWat / n).toFixed(2),
-        response: (totalRes / n).toFixed(2)
-    };
-}
+let saved = null;
+try { saved = localStorage.getItem('theme'); } catch (e) { /* ignore */ }
+setTheme(saved);
+renderInput();
