@@ -1,90 +1,92 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="blue">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CPU Scheduling Simulator</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CPU Scheduling Simulator</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="container">
-        <!-- Algorithm Tabs -->
-        <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab('fcfs', event)">FCFS</button>
-            <button class="tab-btn" onclick="switchTab('sjf', event)">SJF (non-pre)</button>
-            <button class="tab-btn" onclick="switchTab('srtf', event)">SRTF</button>
-            <button class="tab-btn" onclick="switchTab('priority', event)">Priority (non-pre)</button>
-            <button class="tab-btn" onclick="switchTab('rr', event)">Round Robin</button>
-        </div>
+  <main class="app">
+    <header class="hero">
+      <h1>CPU Scheduling Simulator</h1>
+      <p>Add processes, pick an algorithm, and see the Gantt chart and metrics instantly.</p>
+      <div class="themes" role="radiogroup" aria-label="Color theme">
+        <span>Theme</span>
+        <button class="swatch" data-theme="blue" role="radio" title="Blue" aria-label="Blue"></button>
+        <button class="swatch" data-theme="pink" role="radio" title="Pink" aria-label="Pink"></button>
+        <button class="swatch" data-theme="purple" role="radio" title="Purple" aria-label="Purple"></button>
+        <button class="swatch" data-theme="green" role="radio" title="Green" aria-label="Green"></button>
+      </div>
+    </header>
 
-        <!-- Time Quantum Input (For RR) -->
-        <div id="rr-config" style="margin: 10px 0;">
-            <label>Time Quantum: </label>
-            <input type="number" id="timeQuantum" value="4" min="1" style="width: 60px;">
-        </div>
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-algo="fcfs">FCFS</button>
+      <button class="tab" data-algo="sjf">SJF</button>
+      <button class="tab" data-algo="srtf">SRTF</button>
+      <button class="tab" data-algo="priority">Priority</button>
+      <button class="tab" data-algo="rr">Round Robin</button>
+    </nav>
 
-        <!-- Dynamic Process Input Form -->
-        <div class="input-section" style="background: #2a2a3f; padding: 15px; margin: 15px 0; border-radius: 5px;">
-            <h3>Add Process</h3>
-            <input type="text" id="pId" placeholder="Process ID (e.g., P1)" style="padding: 5px; margin-right: 5px;">
-            <input type="number" id="pArrival" placeholder="Arrival Time" style="padding: 5px; margin-right: 5px; width: 100px;" min="0">
-            <input type="number" id="pBurst" placeholder="Burst Time" style="padding: 5px; margin-right: 5px; width: 100px;" min="1">
-            <input type="number" id="pPriority" placeholder="Priority" style="padding: 5px; margin-right: 5px; width: 80px;" min="1">
-            <button onclick="addProcess()" style="padding: 6px 12px; background: #27ae60; color: white; border: none; cursor: pointer;">Add</button>
-            <button onclick="runScheduling()" style="padding: 6px 12px; background: #2980b9; color: white; border: none; cursor: pointer; margin-left: 10px;">Run Simulation</button>
+    <section class="card">
+      <div class="card-head">
+        <h2>Add Process</h2>
+        <div class="quantum" id="rrConfig" hidden>
+          <label for="timeQuantum">Time quantum</label>
+          <input type="number" id="timeQuantum" value="4" min="1">
         </div>
+      </div>
+      <form id="procForm" class="form" autocomplete="off">
+        <label>Process ID<input type="text" id="pId" placeholder="P1"></label>
+        <label>Arrival<input type="number" id="pArrival" placeholder="0" min="0"></label>
+        <label>Burst<input type="number" id="pBurst" placeholder="5" min="1"></label>
+        <label>Priority<input type="number" id="pPriority" placeholder="1" min="1"></label>
+        <button type="submit" class="btn add">+ Add</button>
+      </form>
+      <div class="actions">
+        <button class="btn run" id="runBtn">▶ Run Simulation</button>
+        <button class="btn ghost" id="sampleBtn">Load sample</button>
+        <button class="btn ghost" id="clearBtn">Clear all</button>
+      </div>
+      <p class="msg" id="msg"></p>
+    </section>
 
-        <!-- Added Processes List Table -->
-        <h4>Inputted Processes:</h4>
-        <table border="1" style="width: 100%; border-collapse: collapse; text-align: center; margin-bottom: 20px;" id="inputTable">
-            <thead>
-                <tr>
-                    <th>PROCESS</th>
-                    <th>ARRIVAL</th>
-                    <th>BURST</th>
-                    <th>PRIORITY</th>
-                    <th>ACTION</th>
-                </tr>
-            </thead>
-            <tbody id="inputTableBody">
-                <!-- Dynamically added rows will appear here -->
-            </tbody>
+    <section class="card">
+      <h2>Processes</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Process</th><th>Arrival</th><th>Burst</th><th>Priority</th><th></th></tr></thead>
+          <tbody id="inputBody"></tbody>
         </table>
+      </div>
+      <p class="hint">For Priority scheduling, a lower number means higher priority.</p>
+    </section>
 
-        <h2 id="algo-title">First Come First Served (FCFS) Results</h2>
+    <section id="results" class="results" hidden>
+      <h2 id="algoTitle"></h2>
 
-        <!-- Gantt Chart Container -->
-        <div class="gantt-container" style="background: #1e1e2f; padding: 15px; margin-bottom: 20px;">
-            <h3>Gantt Chart</h3>
-            <div id="ganttChart" style="display: flex; gap: 5px; overflow-x: auto; padding: 10px 0;"></div>
+      <div class="card">
+        <h3>Gantt Chart</h3>
+        <div class="gantt" id="gantt"></div>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><span>Avg Turnaround</span><strong id="avgTat">0.00</strong></div>
+        <div class="stat"><span>Avg Waiting</span><strong id="avgWt">0.00</strong></div>
+        <div class="stat"><span>Avg Response</span><strong id="avgRt">0.00</strong></div>
+      </div>
+
+      <div class="card">
+        <h3>Results</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Process</th><th>Arrival</th><th>Burst</th><th>Completion</th><th>Turnaround</th><th>Waiting</th><th>Response</th></tr></thead>
+            <tbody id="resultBody"></tbody>
+          </table>
         </div>
-
-        <!-- Process Results Table -->
-        <table border="1" style="width: 100%; border-collapse: collapse; text-align: center;" id="processTable">
-            <thead>
-                <tr>
-                    <th>PROCESS</th>
-                    <th>ARRIVAL</th>
-                    <th>BURST</th>
-                    <th>COMPLETION</th>
-                    <th>TURNAROUND</th>
-                    <th>WAITING</th>
-                    <th>RESPONSE</th>
-                </tr>
-            </thead>
-            <tbody id="processTableBody">
-                <!-- Results rows -->
-            </tbody>
-        </table>
-
-        <!-- Averages Footer -->
-        <div class="averages" style="margin-top: 20px;">
-            <p>Avg Turnaround Time: <span id="avgTurnaround">0.00</span></p>
-            <p>Avg Waiting Time: <span id="avgWaiting">0.00</span></p>
-            <p>Avg Response Time: <span id="avgResponse">0.00</span></p>
-        </div>
-    </div>
-
-    <script src="script.js"></script>
+      </div>
+    </section>
+  </main>
+  <script src="script.js"></script>
 </body>
 </html>
