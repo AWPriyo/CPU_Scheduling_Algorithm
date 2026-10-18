@@ -149,7 +149,7 @@ Distributed under the **MIT License**. Add a `LICENSE` file to your repository t
 
 <div align="center">
 
-**Built by Asfar Hossain Sitab** · [GitHub](https://github.com/your-username)
+**Built by Abdul Wadud Priyo** · [GitHub](https://github.com/AWPriyo)
 
 ⭐ If this project helped you, consider giving it a star!
 
