@@ -1,88 +1,90 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>CPU Scheduling Simulator</title>
-  <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPU Scheduling Simulator</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="container">
-    <h1>CPU Scheduling Algorithms Simulator</h1>
-    <p class="subtitle">FCFS • SJF (non-pre) • SRTF • Priority (non-pre) • Round Robin</p>
+    <div class="container">
+        <!-- Algorithm Tabs -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('fcfs', event)">FCFS</button>
+            <button class="tab-btn" onclick="switchTab('sjf', event)">SJF (non-pre)</button>
+            <button class="tab-btn" onclick="switchTab('srtf', event)">SRTF</button>
+            <button class="tab-btn" onclick="switchTab('priority', event)">Priority (non-pre)</button>
+            <button class="tab-btn" onclick="switchTab('rr', event)">Round Robin</button>
+        </div>
 
-    <div class="input-section">
-      <h3>Add Process</h3>
-      <div class="form-grid">
-        <label>Process Name/ID: <input type="text" id="pid" placeholder="P1" value="P"></label>
-        <label>Arrival Time: <input type="number" id="arrival" min="0" value="0"></label>
-        <label>Burst Time: <input type="number" id="burst" min="1" value="8"></label>
-        <label>Priority: <input type="number" id="priority" min="1" value="1" title="Lower number = higher priority"></label>
-      </div>
-      <button id="addProcess">Add Process</button>
+        <!-- Time Quantum Input (For RR) -->
+        <div id="rr-config" style="margin: 10px 0;">
+            <label>Time Quantum: </label>
+            <input type="number" id="timeQuantum" value="4" min="1" style="width: 60px;">
+        </div>
+
+        <!-- Dynamic Process Input Form -->
+        <div class="input-section" style="background: #2a2a3f; padding: 15px; margin: 15px 0; border-radius: 5px;">
+            <h3>Add Process</h3>
+            <input type="text" id="pId" placeholder="Process ID (e.g., P1)" style="padding: 5px; margin-right: 5px;">
+            <input type="number" id="pArrival" placeholder="Arrival Time" style="padding: 5px; margin-right: 5px; width: 100px;" min="0">
+            <input type="number" id="pBurst" placeholder="Burst Time" style="padding: 5px; margin-right: 5px; width: 100px;" min="1">
+            <input type="number" id="pPriority" placeholder="Priority" style="padding: 5px; margin-right: 5px; width: 80px;" min="1">
+            <button onclick="addProcess()" style="padding: 6px 12px; background: #27ae60; color: white; border: none; cursor: pointer;">Add</button>
+            <button onclick="runScheduling()" style="padding: 6px 12px; background: #2980b9; color: white; border: none; cursor: pointer; margin-left: 10px;">Run Simulation</button>
+        </div>
+
+        <!-- Added Processes List Table -->
+        <h4>Inputted Processes:</h4>
+        <table border="1" style="width: 100%; border-collapse: collapse; text-align: center; margin-bottom: 20px;" id="inputTable">
+            <thead>
+                <tr>
+                    <th>PROCESS</th>
+                    <th>ARRIVAL</th>
+                    <th>BURST</th>
+                    <th>PRIORITY</th>
+                    <th>ACTION</th>
+                </tr>
+            </thead>
+            <tbody id="inputTableBody">
+                <!-- Dynamically added rows will appear here -->
+            </tbody>
+        </table>
+
+        <h2 id="algo-title">First Come First Served (FCFS) Results</h2>
+
+        <!-- Gantt Chart Container -->
+        <div class="gantt-container" style="background: #1e1e2f; padding: 15px; margin-bottom: 20px;">
+            <h3>Gantt Chart</h3>
+            <div id="ganttChart" style="display: flex; gap: 5px; overflow-x: auto; padding: 10px 0;"></div>
+        </div>
+
+        <!-- Process Results Table -->
+        <table border="1" style="width: 100%; border-collapse: collapse; text-align: center;" id="processTable">
+            <thead>
+                <tr>
+                    <th>PROCESS</th>
+                    <th>ARRIVAL</th>
+                    <th>BURST</th>
+                    <th>COMPLETION</th>
+                    <th>TURNAROUND</th>
+                    <th>WAITING</th>
+                    <th>RESPONSE</th>
+                </tr>
+            </thead>
+            <tbody id="processTableBody">
+                <!-- Results rows -->
+            </tbody>
+        </table>
+
+        <!-- Averages Footer -->
+        <div class="averages" style="margin-top: 20px;">
+            <p>Avg Turnaround Time: <span id="avgTurnaround">0.00</span></p>
+            <p>Avg Waiting Time: <span id="avgWaiting">0.00</span></p>
+            <p>Avg Response Time: <span id="avgResponse">0.00</span></p>
+        </div>
     </div>
 
-    <div class="processes-section">
-      <h3>Processes <span id="processCount">(0)</span></h3>
-      <table id="processTable">
-        <thead>
-          <tr>
-            <th>PID</th>
-            <th>Arrival</th>
-            <th>Burst</th>
-            <th>Priority</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
-
-    <div class="controls">
-      <label>Time Quantum (for RR): 
-        <input type="number" id="quantum" min="1" value="4" style="width:80px;">
-      </label>
-      <div class="algo-buttons">
-        <button data-algo="fcfs">FCFS</button>
-        <button data-algo="sjf">SJF (non-pre)</button>
-        <button data-algo="srtf">SRTF</button>
-        <button data-algo="priority">Priority (non-pre)</button>
-        <button data-algo="rr">Round Robin</button>
-      </div>
-    </div>
-
-    <div id="result" class="result hidden">
-      <h2 id="algoName"></h2>
-      
-      <div class="gantt">
-        <h3>Gantt Chart</h3>
-        <div id="ganttChart"></div>
-        <div id="ganttTimeline"></div>
-      </div>
-
-      <table id="resultTable">
-        <thead>
-          <tr>
-            <th>Process</th>
-            <th>Arrival</th>
-            <th>Burst</th>
-            <th>Completion</th>
-            <th>Turnaround</th>
-            <th>Waiting</th>
-            <th>Response</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-
-      <div class="averages">
-        <p>Avg Turnaround Time: <strong id="avgTAT">–</strong></p>
-        <p>Avg Waiting Time: <strong id="avgWT">–</strong></p>
-        <p>Avg Response Time: <strong id="avgRT">–</strong></p>
-      </div>
-    </div>
-  </div>
-
-  <script src="script.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
